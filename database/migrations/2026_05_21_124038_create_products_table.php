@@ -22,6 +22,7 @@ return new class extends Migration
         $table->decimal('cost', 10, 2)->nullable(); 
         $table->integer('stock_quantity')->default(0);
         $table->boolean('status')->default(true);
+        $table->foreignId('branch_id') ->nullable() ->constrained();
         $table->timestamps();
     });
 }

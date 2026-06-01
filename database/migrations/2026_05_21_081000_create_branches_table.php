@@ -12,14 +12,24 @@ return new class extends Migration
     public function up(): void
 {
     Schema::create('branches', function (Blueprint $table) {
-        $table->id();
-        $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
-        $table->string('name');
-        $table->string('location')->nullable();
-        $table->string('phone')->nullable();
-        $table->boolean('is_main')->default(false);
-        $table->timestamps();
-    });
+
+    $table->id();
+
+    $table->unsignedBigInteger('tenant_id');
+
+    $table->string('name');
+
+    $table->string('code')->unique();
+
+    $table->string('address')->nullable();
+
+    $table->string('phone')->nullable();
+
+    $table->boolean('active')
+        ->default(true);
+
+    $table->timestamps();
+});
 }
 
     /**

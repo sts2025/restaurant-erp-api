@@ -26,11 +26,13 @@ use HasApiTokens, HasFactory, Notifiable, HasRoles;
         'password',
         'role',
         'is_active',
+        'branch_id',
     ];
 public function tenant()
 {
     return $this->belongsTo(Tenant::class);
 }
+
 
 public function branch()
 {

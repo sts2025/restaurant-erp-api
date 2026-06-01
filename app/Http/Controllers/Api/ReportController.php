@@ -5,39 +5,50 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Sale;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 
 class ReportController extends Controller
 {
-    public function cashierPerformance()
-    {
-        $report = Sale::join(
-                'users',
-                'sales.user_id',
-                '=',
-                'users.id'
-            )
-            ->select(
-                'users.name',
+   public function cashierPerformance()
+{
+    $branchId = Auth::user()->branch_id;
 
-                DB::raw('COUNT(*) as orders_count'),
+    $report = Sale::join(
+            'users',
+            'sales.user_id',
+            '=',
+            'users.id'
+        )
+        ->where(
+            'sales.branch_id',
+            $branchId
+        )
+        ->select(
+            'users.name',
+            DB::raw('COUNT(*) as orders_count'),
+            DB::raw('SUM(total) as total_sales')
+        )
+        ->groupBy(
+            'users.id',
+            'users.name'
+        )
+        ->orderByDesc('total_sales')
+        ->get();
 
-                DB::raw('SUM(total) as total_sales')
-            )
-            ->groupBy(
-                'users.id',
-                'users.name'
-            )
-            ->orderByDesc('total_sales')
-            ->get();
+    return response()->json($report);
+}
 
-        return response()->json($report);
-    }
-    public function zReport()
+public function zReport()
 {
     $today = now()->toDateString();
 
-    $sales =
-        Sale::whereDate(
+    $branchId = Auth::user()->branch_id;
+
+    $sales = Sale::where(
+            'branch_id',
+            $branchId
+        )
+        ->whereDate(
             'created_at',
             $today
         );
@@ -51,7 +62,11 @@ class ReportController extends Controller
             $sales->sum('total'),
 
         'cash_sales' =>
-            Sale::whereDate(
+            Sale::where(
+                'branch_id',
+                $branchId
+            )
+            ->whereDate(
                 'created_at',
                 $today
             )
@@ -62,7 +77,11 @@ class ReportController extends Controller
             ->sum('total'),
 
         'mobile_sales' =>
-            Sale::whereDate(
+            Sale::where(
+                'branch_id',
+                $branchId
+            )
+            ->whereDate(
                 'created_at',
                 $today
             )
@@ -73,7 +92,11 @@ class ReportController extends Controller
             ->sum('total'),
 
         'card_sales' =>
-            Sale::whereDate(
+            Sale::where(
+                'branch_id',
+                $branchId
+            )
+            ->whereDate(
                 'created_at',
                 $today
             )

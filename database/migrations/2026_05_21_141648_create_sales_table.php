@@ -24,6 +24,7 @@ return new class extends Migration
         $table->boolean('is_void') ->default(false);
         $table->text('void_reason')->nullable();
         $table->foreignId('voided_by')->nullable();
+         $table->foreignId('branch_id') ->nullable() ->constrained();
         $table->timestamps();
     });
 }

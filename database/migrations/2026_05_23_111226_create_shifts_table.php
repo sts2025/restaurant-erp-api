@@ -22,6 +22,7 @@ return new class extends Migration
              */
             $table->foreignId('tenant_id')
                 ->default(1);
+            $table->foreignId('branch_id') ->nullable() ->constrained();
 
             /**
              * USER / CASHIER

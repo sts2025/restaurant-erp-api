@@ -19,6 +19,7 @@ return new class extends Migration
             $table->boolean('is_vip')->default(false);
 
             $table->boolean('is_active')->default(true);
+             $table->foreignId('branch_id') ->nullable() ->constrained();
 
             $table->timestamps();
 

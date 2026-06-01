@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\RestaurantTable;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 
 class RestaurantTableController extends Controller
@@ -14,8 +15,13 @@ class RestaurantTableController extends Controller
      */
     public function index()
     {
-        $tables = RestaurantTable::latest()->get();
-        
+        $tables = RestaurantTable::where(
+            'branch_id',
+            Auth::user()->branch_id
+        )
+        ->latest()
+        ->get();
+
         return response()->json([
             'status' => 'success',
             'data' => $tables
@@ -35,11 +41,12 @@ class RestaurantTableController extends Controller
         ]);
 
         $table = RestaurantTable::create([
+            'branch_id' => Auth::user()->branch_id,
             'name' => $validated['name'],
             'capacity' => $validated['capacity'],
             'is_vip' => $validated['is_vip'] ?? false,
             'is_active' => true,
-            'status' => 'available' // CRITICAL: Always 'available' on creation
+            'status' => 'available'
         ]);
 
         return response()->json([
@@ -50,11 +57,38 @@ class RestaurantTableController extends Controller
     }
 
     /**
+     * Display a specific table
+     */
+    public function show(RestaurantTable $table)
+    {
+        // Add branch check for security
+        if ($table->branch_id !== Auth::user()->branch_id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized access to this table'
+            ], 403);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $table
+        ]);
+    }
+
+    /**
      * Update table details (not status)
      * For status updates, use dedicated methods: occupy() or makeAvailable()
      */
     public function update(Request $request, RestaurantTable $table)
     {
+        // Add branch check for security
+        if ($table->branch_id !== Auth::user()->branch_id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized access to this table'
+            ], 403);
+        }
+
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255|unique:restaurant_tables,name,' . $table->id,
             'capacity' => 'sometimes|integer|min:1|max:50',
@@ -80,6 +114,14 @@ class RestaurantTableController extends Controller
      */
     public function occupy(RestaurantTable $table)
     {
+        // Add branch check for security
+        if ($table->branch_id !== Auth::user()->branch_id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized access to this table'
+            ], 403);
+        }
+
         // Prevent occupying if already occupied
         if ($table->status === 'occupied') {
             return response()->json([
@@ -112,6 +154,14 @@ class RestaurantTableController extends Controller
      */
     public function makeAvailable(RestaurantTable $table)
     {
+        // Add branch check for security
+        if ($table->branch_id !== Auth::user()->branch_id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized access to this table'
+            ], 403);
+        }
+
         // Only occupied tables can be made available
         if ($table->status !== 'occupied') {
             return response()->json([
@@ -135,6 +185,14 @@ class RestaurantTableController extends Controller
      */
     public function reserve(RestaurantTable $table)
     {
+        // Add branch check for security
+        if ($table->branch_id !== Auth::user()->branch_id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized access to this table'
+            ], 403);
+        }
+
         if ($table->status !== 'available') {
             return response()->json([
                 'status' => 'error',
@@ -167,6 +225,14 @@ class RestaurantTableController extends Controller
      */
     public function destroy(RestaurantTable $table)
     {
+        // Add branch check for security
+        if ($table->branch_id !== Auth::user()->branch_id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized access to this table'
+            ], 403);
+        }
+
         // Prevent deleting occupied tables
         if ($table->status === 'occupied') {
             return response()->json([
@@ -183,43 +249,75 @@ class RestaurantTableController extends Controller
         ]);
     }
 
-    public function transfer(
-    Request $request
-)
-{
-    $from =
-      RestaurantTable::findOrFail(
-        $request->from_table_id
-      );
+    /**
+     * Transfer order from one table to another
+     */
+    public function transfer(Request $request)
+    {
+        $request->validate([
+            'from_table_id' => 'required|exists:restaurant_tables,id',
+            'to_table_id' => 'required|exists:restaurant_tables,id',
+        ]);
 
-    $to =
-      RestaurantTable::findOrFail(
-        $request->to_table_id
-      );
+        $from = RestaurantTable::findOrFail($request->from_table_id);
+        $to = RestaurantTable::findOrFail($request->to_table_id);
 
-    $from->update([
-      'status' => 'available'
-    ]);
+        // Add branch checks for security
+        if ($from->branch_id !== Auth::user()->branch_id || $to->branch_id !== Auth::user()->branch_id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized access to one or both tables'
+            ], 403);
+        }
 
-    $to->update([
-      'status' => 'occupied'
-    ]);
+        // Validate that from table is occupied
+        if ($from->status !== 'occupied') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Source table must be occupied to transfer'
+            ], 422);
+        }
 
-    return response()->json([
-      'message' => 'Transferred'
-    ]);
-}
+        // Validate that to table is available
+        if ($to->status !== 'available') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Destination table must be available for transfer'
+            ], 422);
+        }
+
+        $from->update(['status' => 'available']);
+        $to->update(['status' => 'occupied']);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Order transferred successfully',
+            'data' => [
+                'from_table' => $from,
+                'to_table' => $to
+            ]
+        ]);
+    }
+
     /**
      * Get table statistics
      */
     public function statistics()
     {
         $stats = [
-            'total' => RestaurantTable::count(),
-            'available' => RestaurantTable::where('status', 'available')->count(),
-            'occupied' => RestaurantTable::where('status', 'occupied')->count(),
-            'reserved' => RestaurantTable::where('status', 'reserved')->count(),
-            'vip_tables' => RestaurantTable::where('is_vip', true)->count(),
+            'total' => RestaurantTable::where('branch_id', Auth::user()->branch_id)->count(),
+            'available' => RestaurantTable::where('branch_id', Auth::user()->branch_id)
+                ->where('status', 'available')
+                ->count(),
+            'occupied' => RestaurantTable::where('branch_id', Auth::user()->branch_id)
+                ->where('status', 'occupied')
+                ->count(),
+            'reserved' => RestaurantTable::where('branch_id', Auth::user()->branch_id)
+                ->where('status', 'reserved')
+                ->count(),
+            'vip_tables' => RestaurantTable::where('branch_id', Auth::user()->branch_id)
+                ->where('is_vip', true)
+                ->count(),
         ];
 
         return response()->json([

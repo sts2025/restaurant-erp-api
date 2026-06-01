@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class ProductController extends Controller
 {
@@ -14,6 +15,7 @@ class ProductController extends Controller
     public function index()
     {
         $products = Product::with('category')
+            ->where('branch_id', Auth::user()->branch_id)
             ->latest()
             ->get();
 
@@ -37,13 +39,16 @@ class ProductController extends Controller
         ]);
 
         $product = Product::create([
+            'branch_id' => Auth::user()->branch_id,
             'tenant_id' => 1,
             'name' => $request->name,
             'price' => $request->price,
             'stock_quantity' => $request->stock_quantity,
             'category_id' => $request->category_id ?? 1,
             'preparation_area' => $request->preparation_area
+            
         ]);
+        $product->save();
 
         return response()->json([
             'message' => 'Product created successfully',
@@ -56,6 +61,14 @@ class ProductController extends Controller
      */
     public function show(Product $product)
     {
+        // Add branch check for security
+        if ($product->branch_id !== Auth::user()->branch_id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized access to this product'
+            ], 403);
+        }
+
         return response()->json([
             'status' => 'success',
             'data' => $product->load('category')
@@ -67,6 +80,14 @@ class ProductController extends Controller
      */
     public function update(Request $request, Product $product)
     {
+        // Add branch check for security
+        if ($product->branch_id !== Auth::user()->branch_id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized access to this product'
+            ], 403);
+        }
+
         $request->validate([
             'name' => 'sometimes|required|string|max:255',
             'price' => 'sometimes|required|numeric|min:0',
@@ -94,6 +115,14 @@ class ProductController extends Controller
      */
     public function destroy(Product $product)
     {
+        // Add branch check for security
+        if ($product->branch_id !== Auth::user()->branch_id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized access to this product'
+            ], 403);
+        }
+
         $product->delete();
 
         return response()->json([
@@ -112,6 +141,14 @@ class ProductController extends Controller
         ]);
 
         $product = Product::findOrFail($request->product_id);
+        
+        // Add branch check for security
+        if ($product->branch_id !== Auth::user()->branch_id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized access to this product'
+            ], 403);
+        }
         
         $product->increment('stock_quantity', $request->quantity);
 
@@ -135,8 +172,12 @@ class ProductController extends Controller
         $updated = [];
         foreach ($request->products as $item) {
             $product = Product::find($item['id']);
-            $product->update(['preparation_area' => $item['preparation_area']]);
-            $updated[] = $product;
+            
+            // Add branch check for each product
+            if ($product && $product->branch_id === Auth::user()->branch_id) {
+                $product->update(['preparation_area' => $item['preparation_area']]);
+                $updated[] = $product;
+            }
         }
 
         return response()->json([
@@ -151,6 +192,7 @@ class ProductController extends Controller
     public function getByPreparationArea($area)
     {
         $products = Product::with('category')
+            ->where('branch_id', Auth::user()->branch_id)
             ->where('preparation_area', $area)
             ->latest()
             ->get();

@@ -14,56 +14,44 @@ class ShiftController extends Controller
     /**
      * GET ACTIVE SHIFT
      */
-    public function active()
-    {
-        $shift = Shift::where('user_id', Auth::id())
-            ->where('status', 'open')
-            ->latest()
-            ->first();
+public function active()
+{
+    $shift = Shift::where(
+        'user_id',
+        Auth::id()
+    )
+    ->where(
+        'status',
+        'open'
+    )
+    ->latest()
+    ->first();
 
-        return response()->json($shift);
-    }
-
+    return response()->json(
+        $shift ?: null
+    );
+}
     /**
      * OPEN NEW SHIFT
      */
     public function open(Request $request)
-    {
-        $request->validate([
-            'starting_cash' => 'required|numeric|min:0'
-        ]);
+{
+    $request->validate([
+        'starting_cash' => 'required|numeric|min:0'
+    ]);
 
-        // PREVENT MULTIPLE OPEN SHIFTS
-        $existingShift = Shift::where('user_id', Auth::id())
-            ->where('status', 'open')
-            ->first();
+    $shift = Shift::create([
+        'tenant_id' => 1,
+        'branch_id' => Auth::user()->branch_id,
+        'user_id' => Auth::id(),
+        'business_date' => now()->toDateString(),
+        'start_time' => now(),
+        'starting_cash' => $request->starting_cash,
+        'status' => 'open'
+    ]);
 
-        if ($existingShift) {
-
-            return response()->json([
-                'message' => 'You already have an open shift'
-            ], 400);
-
-        }
-
-        $shift = Shift::create([
-
-            'tenant_id' => 1,
-
-            'user_id' => Auth::id(),
-
-            'business_date' => now()->format('Y-m-d'),
-
-            'start_time' => now(),
-
-            'starting_cash' => $request->starting_cash,
-
-            'status' => 'open'
-
-        ]);
-
-        return response()->json($shift);
-    }
+    return response()->json($shift);
+}
 
     /**
      * CLOSE SHIFT
@@ -74,17 +62,16 @@ class ShiftController extends Controller
             'closing_cash' => 'required|numeric|min:0'
         ]);
 
-        $shift = Shift::where('user_id', Auth::id())
+        $shift = Shift::where('branch_id', Auth::user()->branch_id)
+            ->where('user_id', Auth::id())
             ->where('status', 'open')
             ->latest()
             ->first();
 
         if (!$shift) {
-
             return response()->json([
                 'message' => 'No open shift found'
             ], 404);
-
         }
 
         /**
@@ -96,46 +83,30 @@ class ShiftController extends Controller
         /**
          * EXPECTED CASH
          */
-        $expectedCash =
-            $shift->starting_cash +
-            $salesTotal;
+        $expectedCash = $shift->starting_cash + $salesTotal;
 
         /**
          * DIFFERENCE
          */
-        $difference =
-            $request->closing_cash -
-            $expectedCash;
+        $difference = $request->closing_cash - $expectedCash;
 
         /**
          * UPDATE SHIFT
          */
         $shift->update([
-
             'closing_cash' => $request->closing_cash,
-
             'expected_cash' => $expectedCash,
-
             'cash_difference' => $difference,
-
             'end_time' => now(),
-
             'status' => 'closed'
-
         ]);
 
         return response()->json([
-
             'message' => 'Shift closed successfully',
-
             'shift' => $shift,
-
             'sales_total' => $salesTotal,
-
             'expected_cash' => $expectedCash,
-
             'difference' => $difference
-
         ]);
     }
 
@@ -144,18 +115,17 @@ class ShiftController extends Controller
      */
     public function getShiftReport($id)
     {
-        $shift = Shift::findOrFail($id);
+        $shift = Shift::where('branch_id', Auth::user()->branch_id)
+            ->where('id', $id)
+            ->firstOrFail();
 
         $breakdown = Sale::where('shift_id', $shift->id)
-
             ->select(
                 'payment_method',
                 DB::raw('SUM(total) as revenue'),
                 DB::raw('COUNT(*) as transactions')
             )
-
             ->groupBy('payment_method')
-
             ->get();
 
         $totalRevenue = Sale::where('shift_id', $shift->id)
@@ -165,39 +135,46 @@ class ShiftController extends Controller
             ->count();
 
         return response()->json([
-
             'shift' => $shift,
-
             'breakdown' => $breakdown,
-
             'total_revenue' => $totalRevenue,
-
             'total_transactions' => $totalTransactions
-
         ]);
     }
+
+    /**
+     * SHIFT REPORT (ALTERNATIVE METHOD)
+     */
     public function report($id)
-{
-    $shift = Shift::findOrFail($id);
+    {
+        $shift = Shift::where('branch_id', Auth::user()->branch_id)
+            ->where('id', $id)
+            ->firstOrFail();
 
-    $sales = Sale::where(
-        'shift_id',
-        $shift->id
-    )->get();
+        $sales = Sale::where('shift_id', $shift->id)->get();
 
-    return response()->json([
-        'shift' => $shift,
-        'sales_count' => $sales->count(),
-        'total_sales' => $sales->sum('total'),
-        'cash_sales' => $sales
-            ->where('payment_method', 'Cash')
-            ->sum('total'),
-        'mobile_money' => $sales
-            ->where('payment_method', 'Mobile Money')
-            ->sum('total'),
-        'card_sales' => $sales
-            ->where('payment_method', 'Card')
-            ->sum('total'),
-    ]);
+        return response()->json([
+            'shift' => $shift,
+            'sales_count' => $sales->count(),
+            'total_sales' => $sales->sum('total'),
+            'cash_sales' => $sales
+                ->where('payment_method', 'Cash')
+                ->sum('total'),
+            'mobile_money' => $sales
+                ->where('payment_method', 'Mobile Money')
+                ->sum('total'),
+            'card_sales' => $sales
+                ->where('payment_method', 'Card')
+                ->sum('total'),
+        ]);
+    }
 }
-}
+
+
+
+
+
+
+
+
+

@@ -20,296 +20,165 @@ class SaleController extends Controller
          * VALIDATION
          */
         $request->validate([
-
             'items' => 'required|array|min:1',
-
-            'items.*.product_id' =>
-                'required|exists:products,id',
-
-            'items.*.quantity' =>
-                'required|numeric|min:1',
-
-            'paid_amount' =>
-                'required|numeric|min:0',
-
-            'payment_method' =>
-                'required|string'
-
+            'items.*.product_id' => 'required|exists:products,id',
+            'items.*.quantity' => 'required|numeric|min:1',
+            'paid_amount' => 'required|numeric|min:0',
+            'payment_method' => 'required|string'
         ]);
 
         /**
          * ACTIVE SHIFT
          */
-        $activeShift = Shift::where(
-                'user_id',
-                Auth::id()
-            )
+        $activeShift = Shift::where('user_id', Auth::id())
             ->where('status', 'open')
             ->latest()
             ->first();
 
         if (!$activeShift) {
-
             return response()->json([
-
-                'message' =>
-                    'Clock in first!'
-
+                'message' => 'Clock in first!'
             ], 403);
-
         }
 
         /**
          * DATABASE TRANSACTION
          */
-        return DB::transaction(function () use (
-            $request,
-            $activeShift
-        ) {
-
+        return DB::transaction(function () use ($request, $activeShift) {
             $totalAmount = 0;
-
             $itemsData = [];
 
             /**
              * PROCESS ITEMS
              */
             foreach ($request->items as $item) {
-
-                $product = Product::findOrFail(
-                    $item['product_id']
-                );
+                $product = Product::findOrFail($item['product_id']);
 
                 /**
                  * STOCK CHECK
                  */
-                if (
-                    $product->stock_quantity <
-                    $item['quantity']
-                ) {
-
+                if ($product->stock_quantity < $item['quantity']) {
                     return response()->json([
-
-                        'message' =>
-                            'Insufficient stock for ' .
-                            $product->name
-
+                        'message' => 'Insufficient stock for ' . $product->name
                     ], 400);
-
                 }
 
                 /**
                  * LINE TOTAL
                  */
-                $lineTotal =
-                    $product->price *
-                    $item['quantity'];
-
+                $lineTotal = $product->price * $item['quantity'];
                 $totalAmount += $lineTotal;
 
                 /**
                  * SALE ITEMS
                  */
                 $itemsData[] = [
-
-                    'product_id' =>
-                        $product->id,
-
-                    'quantity' =>
-                        $item['quantity'],
-
-                    'price' =>
-                        $product->price,
-
-                    'total' =>
-                        $lineTotal
-
+                    'product_id' => $product->id,
+                    'quantity' => $item['quantity'],
+                    'price' => $product->price,
+                    'total' => $lineTotal
                 ];
 
                 /**
                  * REDUCE STOCK
                  */
-                $product->decrement(
-                    'stock_quantity',
-                    $item['quantity']
-                );
+                $product->decrement('stock_quantity', $item['quantity']);
             }
 
             /**
              * PAYMENT CHECK
              */
-            if (
-                $request->paid_amount <
-                $totalAmount
-            ) {
-
+            if ($request->paid_amount < $totalAmount) {
                 return response()->json([
-
-                    'message' =>
-                        'Insufficient payment.'
-
+                    'message' => 'Insufficient payment.'
                 ], 400);
-
             }
 
             /**
              * RECEIPT NUMBER
              */
             $tenant = Tenant::find(1);
-
-            $businessName =
-                $tenant->name ??
-                'Restaurant POS';
-
-            $words = explode(
-                ' ',
-                $businessName
-            );
-
+            $businessName = $tenant->name ?? 'Restaurant POS';
+            $words = explode(' ', $businessName);
             $initials = '';
 
             foreach ($words as $word) {
-
-                $initials .= strtoupper(
-                    substr($word, 0, 1)
-                );
-
+                $initials .= strtoupper(substr($word, 0, 1));
             }
 
             /**
              * LAST RECEIPT
              */
-            $lastSale = Sale::latest()
-                ->first();
-
+            $lastSale = Sale::latest()->first();
             $nextNumber = 100;
 
-            if (
-                $lastSale &&
-                $lastSale->receipt_number
-            ) {
-
-                preg_match(
-                    '/(\d+)$/',
-                    $lastSale->receipt_number,
-                    $matches
-                );
-
+            if ($lastSale && $lastSale->receipt_number) {
+                preg_match('/(\d+)$/', $lastSale->receipt_number, $matches);
                 if (isset($matches[1])) {
-
-                    $nextNumber =
-                        ((int) $matches[1]) + 1;
-
+                    $nextNumber = ((int) $matches[1]) + 1;
                 }
             }
 
-            $receiptNumber =
-                $initials .
-                $nextNumber;
+            $receiptNumber = $initials . $nextNumber;
 
             /**
              * EXISTING ACTIVE SALE
              */
             if ($request->sale_id) {
-
-                $sale = Sale::findOrFail(
-                    $request->sale_id
-                );
-
+                $sale = Sale::findOrFail($request->sale_id);
                 /**
                  * DELETE OLD ITEMS
                  */
                 $sale->items()->delete();
-
             } else {
-
                 $sale = new Sale();
-
                 $sale->tenant_id = 1;
-
-                $sale->user_id =
-                    Auth::id();
-
-                $sale->receipt_number =
-                    $receiptNumber;
-
-                $sale->shift_id =
-                    $activeShift->id;
-
+                $sale->branch_id = Auth::user()->branch_id;
+                $sale->user_id = Auth::id();
+                $sale->receipt_number = $receiptNumber;
+                $sale->shift_id = $activeShift->id;
             }
 
-            $sale->total =
-                $totalAmount;
-
-            $sale->paid =
-                $request->paid_amount;
-
-            $sale->change =
-                $request->paid_amount -
-                $totalAmount;
-
+            $sale->total = $totalAmount;
+            $sale->paid = $request->paid_amount;
+            $sale->change = $request->paid_amount - $totalAmount;
             $sale->payment_method = $request->payment_method;
             
             /**
              * SET STATUS TO COMPLETED
              */
             $sale->status = 'completed';
-
-            $sale->table_id =
-                $request->table_id ?? null;
-
+            $sale->table_id = $request->table_id ?? null;
             $sale->save();
 
             /**
              * SAVE SALE ITEMS
              */
-            $sale->items()->createMany(
-                $itemsData
-            );
+            $sale->items()->createMany($itemsData);
 
             /**
              * UPDATE TABLE STATUS
              */
             if ($request->table_id) {
-
-                RestaurantTable::where(
-                    'id',
-                    $request->table_id
-                )->update([
-
+                RestaurantTable::where('id', $request->table_id)->update([
                     'status' => 'occupied'
-
                 ]);
-
             }
 
             /**
              * RESET ACTIVE SALE
-             * After successful payment
              */
             session(['active_sale_id' => null]);
-            
-            // If you have a helper function or method to set active sale ID
-            // setActiveSaleId(null);
 
             /**
              * RESPONSE
              */
             return response()->json([
-
                 'status' => 'success',
-
-                'message' =>
-                    'Sale completed successfully',
-
+                'message' => 'Sale completed successfully',
                 'clear_table' => true,
-
-                'receipt' => $sale->load(
-                    'items.product'
-                )
-
+                'receipt' => $sale->load('items.product')
             ]);
-
         });
     }
 
@@ -319,86 +188,41 @@ class SaleController extends Controller
     public function hold(Request $request)
     {
         $request->validate([
-
-            'items' =>
-                'required|array|min:1',
-
-            'items.*.product_id' =>
-                'required|exists:products,id',
-
-            'items.*.quantity' =>
-                'required|numeric|min:1',
-
+            'items' => 'required|array|min:1',
+            'items.*.product_id' => 'required|exists:products,id',
+            'items.*.quantity' => 'required|numeric|min:1',
         ]);
 
         /**
          * ACTIVE SHIFT
          */
-        $activeShift = Shift::where(
-
-            'user_id',
-
-            Auth::id()
-
-        )
-
-        ->where(
-            'status',
-            'open'
-        )
-
-        ->latest()
-
-        ->first();
+        $activeShift = Shift::where('user_id', Auth::id())
+            ->where('status', 'open')
+            ->latest()
+            ->first();
 
         if (!$activeShift) {
-
             return response()->json([
-
-                'message' =>
-                    'Clock in first'
-
+                'message' => 'Clock in first'
             ], 403);
-
         }
 
         /**
          * TOTALS
          */
         $totalAmount = 0;
-
         $itemsData = [];
 
         foreach ($request->items as $item) {
-
-            $product =
-                Product::findOrFail(
-                    $item['product_id']
-                );
-
-            $lineTotal =
-
-                $product->price
-                *
-                $item['quantity'];
-
-            $totalAmount +=
-                $lineTotal;
+            $product = Product::findOrFail($item['product_id']);
+            $lineTotal = $product->price * $item['quantity'];
+            $totalAmount += $lineTotal;
 
             $itemsData[] = [
-
-                'product_id' =>
-                    $product->id,
-
-                'quantity' =>
-                    $item['quantity'],
-
-                'price' =>
-                    $product->price,
-
-                'total' =>
-                    $lineTotal,
-
+                'product_id' => $product->id,
+                'quantity' => $item['quantity'],
+                'price' => $product->price,
+                'total' => $lineTotal,
             ];
         }
 
@@ -406,76 +230,37 @@ class SaleController extends Controller
          * CREATE SALE
          */
         $sale = new Sale();
-
         $sale->tenant_id = 1;
-
-        $sale->user_id =
-            Auth::id();
-
-        $sale->shift_id =
-            $activeShift->id;
-
-        $sale->table_id =
-            $request->table_id;
-
-        $sale->total =
-            $totalAmount;
-
+        $sale->branch_id = Auth::user()->branch_id;
+        $sale->user_id = Auth::id();
+        $sale->shift_id = $activeShift->id;
+        $sale->table_id = $request->table_id;
+        $sale->total = $totalAmount;
         $sale->paid = 0;
-
         $sale->change = 0;
-
-        $sale->payment_method =
-            'pending';
-
+        $sale->payment_method = 'pending';
         $sale->status = 'held';
-
-        $sale->receipt_number =
-            'HOLD-' . strtoupper(
-                uniqid()
-            );
-
+        $sale->receipt_number = 'HOLD-' . strtoupper(uniqid());
         $sale->save();
 
         /**
          * SAVE ITEMS
          */
-        $sale->items()
-            ->createMany(
-                $itemsData
-            );
+        $sale->items()->createMany($itemsData);
 
         /**
          * UPDATE TABLE
          */
         if ($sale->table_id) {
-
-            \App\Models\RestaurantTable
-                ::where(
-                    'id',
-                    $sale->table_id
-                )
-                ->update([
-
-                    'status' =>
-                        'occupied'
-
-                ]);
-
+            RestaurantTable::where('id', $sale->table_id)->update([
+                'status' => 'occupied'
+            ]);
         }
 
         return response()->json([
-
             'status' => 'success',
-
-            'message' =>
-                'Order held successfully',
-
-            'sale' =>
-                $sale->load(
-                    'items.product'
-                )
-
+            'message' => 'Order held successfully',
+            'sale' => $sale->load('items.product')
         ]);
     }
 
@@ -489,6 +274,7 @@ class SaleController extends Controller
             'items.product',
             'table'
         ])
+        ->where('branch_id', Auth::user()->branch_id)
         ->where('status', 'held')
         ->latest()
         ->get();
@@ -506,51 +292,25 @@ class SaleController extends Controller
     public function index(Request $request)
     {
         $sales = Sale::with([
-                'items.product',
-                'user',
-                'table'
-            ])
-            ->latest()
-            ->when(
-                $request->search,
-                function ($query) use ($request) {
-                    $query->where(
-                        'receipt_number',
-                        'like',
-                        '%' . $request->search . '%'
-                    );
-                }
-            )
-            ->when(
-                $request->payment_method,
-                function ($query) use ($request) {
-                    $query->where(
-                        'payment_method',
-                        $request->payment_method
-                    );
-                }
-            )
-            ->when(
-                $request->start_date,
-                function ($query) use ($request) {
-                    $query->whereDate(
-                        'created_at',
-                        '>=',
-                        $request->start_date
-                    );
-                }
-            )
-            ->when(
-                $request->end_date,
-                function ($query) use ($request) {
-                    $query->whereDate(
-                        'created_at',
-                        '<=',
-                        $request->end_date
-                    );
-                }
-            )
-            ->paginate(20);
+            'items.product',
+            'user',
+            'table'
+        ])
+        ->where('branch_id', Auth::user()->branch_id)
+        ->latest()
+        ->when($request->search, function ($query) use ($request) {
+            $query->where('receipt_number', 'like', '%' . $request->search . '%');
+        })
+        ->when($request->payment_method, function ($query) use ($request) {
+            $query->where('payment_method', $request->payment_method);
+        })
+        ->when($request->start_date, function ($query) use ($request) {
+            $query->whereDate('created_at', '>=', $request->start_date);
+        })
+        ->when($request->end_date, function ($query) use ($request) {
+            $query->whereDate('created_at', '<=', $request->end_date);
+        })
+        ->paginate(20);
 
         return response()->json([
             'status' => 'success',
@@ -567,70 +327,72 @@ class SaleController extends Controller
          * FIND ORDER
          */
         $sale = Sale::with([
-
             'items.product',
-
             'table'
-
         ])
-
-        ->where(
-            'status',
-            'held'
-        )
-
+        ->where('branch_id', Auth::user()->branch_id)
+        ->where('status', 'held')
         ->findOrFail($id);
 
         /**
          * MARK ACTIVE
          */
         $sale->status = 'active';
-
         $sale->save();
 
         return response()->json([
-
             'status' => 'success',
-
             'data' => $sale
-
         ]);
     }
 
-    public function voidSale(
-    Request $request,
-    Sale $sale
-)
-{
-    $request->validate([
-        'reason' => 'required'
-    ]);
+    /**
+     * VOID SALE
+     */
+    public function voidSale(Request $request, Sale $sale)
+    {
+        $request->validate([
+            'reason' => 'required'
+        ]);
 
-    $sale->update([
+        $sale->update([
+            'is_void' => true,
+            'void_reason' => $request->reason,
+            'voided_by' => auth()->id()
+        ]);
 
-        'is_void' => true,
+        return response()->json([
+            'message' => 'Sale voided'
+        ]);
+    }
 
-        'void_reason' =>
-            $request->reason,
-
-        'voided_by' =>
-            auth()->id()
-
-    ]);
-
-    return response()->json([
-        'message' => 'Sale voided'
-    ]);
-}
-
+    /**
+     * SHOW SALE
+     */
     public function show($id)
+    {
+        $sale = Sale::with([
+            'items.product',
+            'user'
+        ])
+        ->where('branch_id', Auth::user()->branch_id)
+        ->findOrFail($id);
+
+        return response()->json($sale);
+    }
+
+    public function reprint($id)
 {
     $sale = Sale::with([
         'items.product',
-        'user'
+        'user',
+        'table'
     ])->findOrFail($id);
 
-    return response()->json($sale);
+    return response()->json([
+        'status' => 'success',
+        'data' => $sale
+    ]);
 }
     /**
      * DAILY SALES REPORT
@@ -641,11 +403,8 @@ class SaleController extends Controller
         /**
          * DATE RANGE
          */
-        $fromDate = $request->from_date
-            ?? today()->toDateString();
-
-        $toDate = $request->to_date
-            ?? today()->toDateString();
+        $fromDate = $request->from_date ?? today()->toDateString();
+        $toDate = $request->to_date ?? today()->toDateString();
 
         /**
          * FETCH SALES
@@ -653,6 +412,7 @@ class SaleController extends Controller
         $sales = Sale::with([
             'items.product.category'
         ])
+        ->where('branch_id', Auth::user()->branch_id)
         ->whereDate('created_at', '>=', $fromDate)
         ->whereDate('created_at', '<=', $toDate);
 
@@ -660,20 +420,14 @@ class SaleController extends Controller
          * PAYMENT FILTER
          */
         if ($request->payment_method) {
-            $sales = $sales->where(
-                'payment_method',
-                $request->payment_method
-            );
+            $sales = $sales->where('payment_method', $request->payment_method);
         }
 
         /**
          * CASHIER FILTER
          */
         if ($request->cashier_id) {
-            $sales = $sales->where(
-                'user_id',
-                $request->cashier_id
-            );
+            $sales = $sales->where('user_id', $request->cashier_id);
         }
 
         // Execute the query
@@ -692,30 +446,18 @@ class SaleController extends Controller
         /**
          * CASH SALES
          */
-        $cashSales = $sales
-            ->where('payment_method', 'cash')
-            ->sum('total');
+        $cashSales = $sales->where('payment_method', 'cash')->sum('total');
 
         /**
          * MOBILE MONEY SALES
          */
-        $mobileMoneySales = $sales
-            ->where('payment_method', 'mobile_money')
-            ->sum('total');
+        $mobileMoneySales = $sales->where('payment_method', 'mobile_money')->sum('total');
 
         /**
          * CATEGORY TOTALS
          */
         $categoryTotals = [];
-
-        /**
-         * CATEGORY QUANTITIES
-         */
         $categoryQuantities = [];
-
-        /**
-         * PRODUCT SALES
-         */
         $productSales = [];
 
         /**
@@ -729,8 +471,7 @@ class SaleController extends Controller
                     continue;
                 }
 
-                $categoryName = $product->category->name
-                    ?? 'Uncategorized';
+                $categoryName = $product->category->name ?? 'Uncategorized';
 
                 /**
                  * CATEGORY SALES
@@ -777,10 +518,7 @@ class SaleController extends Controller
         /**
          * RECENT SALES
          */
-        $recentSales = $sales
-            ->sortByDesc('id')
-            ->take(10)
-            ->values();
+        $recentSales = $sales->sortByDesc('id')->take(10)->values();
 
         /**
          * RESPONSE
@@ -796,7 +534,11 @@ class SaleController extends Controller
                 'mobile_money_sales' => $mobileMoneySales,
                 'category_totals' => $categoryTotals,
                 'category_quantities' => $categoryQuantities,
-                'product_sales' => array_values($productSales),
+                'top_products' => array_slice(
+    array_values($productSales),
+    0,
+    10
+),
                 'recent_sales' => $recentSales
             ]
         ]);

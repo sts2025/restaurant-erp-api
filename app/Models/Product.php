@@ -16,6 +16,7 @@ class Product extends Model
 
     'tenant_id',
     'category_id',
+    'branch_id',
     'name',
     'price',
     'stock_quantity',
@@ -61,6 +62,12 @@ class Product extends Model
         );
     }
 
+    public function branch()
+{
+    return $this->belongsTo(
+        Branch::class
+    );
+}
     /**
      * CHECK IF PRODUCT
      * NEEDS KITCHEN

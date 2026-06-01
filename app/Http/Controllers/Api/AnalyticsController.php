@@ -6,29 +6,66 @@ use App\Http\Controllers\Controller;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 
 class AnalyticsController extends Controller
 {
-    public function dashboard()
-    {
-        // 1. Total Revenue Today
-        $todayRevenue = Sale::whereDate('created_at', today())->sum('total');
+   public function dashboard()
+{
+    $branchId = Auth::user()->branch_id;
 
-        // 2. Transaction Count Today
-        $todayTransactions = Sale::whereDate('created_at', today())->count();
+    $todayRevenue = Sale::where(
+            'branch_id',
+            $branchId
+        )
+        ->whereDate(
+            'created_at',
+            today()
+        )
+        ->sum('total');
 
-        // 3. Top Selling Products (Aggregating SaleItems)
-        $topProducts = SaleItem::with('product')
-            ->select('product_id', DB::raw('SUM(quantity) as total_sold'))
-            ->groupBy('product_id')
-            ->orderByDesc('total_sold')
-            ->limit(5)
-            ->get();
+    $todayTransactions = Sale::where(
+            'branch_id',
+            $branchId
+        )
+        ->whereDate(
+            'created_at',
+            today()
+        )
+        ->count();
 
-        return response()->json([
-            'revenue_today' => $todayRevenue,
-            'transactions_today' => $todayTransactions,
-            'top_products' => $topProducts
-        ]);
-    }
+    $topProducts = SaleItem::join(
+            'sales',
+            'sale_items.sale_id',
+            '=',
+            'sales.id'
+        )
+        ->join(
+            'products',
+            'sale_items.product_id',
+            '=',
+            'products.id'
+        )
+        ->where(
+            'sales.branch_id',
+            $branchId
+        )
+        ->select(
+            'products.name',
+            DB::raw('SUM(sale_items.quantity) as total_sold')
+        )
+        ->groupBy(
+            'products.id',
+            'products.name'
+        )
+        ->orderByDesc('total_sold')
+        ->limit(5)
+        ->get();
+
+    return response()->json([
+        'revenue_today' => $todayRevenue,
+        'transactions_today' => $todayTransactions,
+        'top_products' => $topProducts
+    ]);
+}
 }

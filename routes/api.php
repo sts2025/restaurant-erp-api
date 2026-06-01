@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\RestaurantTableController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\PurchaseController;
+use App\Http\Controllers\Api\BranchController;
 
 // =====================
 // PUBLIC ROUTES
@@ -28,6 +29,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
+
+
 
     // Route::post('/clock-in', [AttendanceController::class, 'clockIn']);
 
@@ -54,6 +57,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/sales', [SaleController::class, 'index']);
     Route::get('/reports/daily',[SaleController::class, 'dailyReport']);
     Route::get('/sales/{sale}', [SaleController::class, 'show']);
+    Route::get( '/sales/{id}/reprint', [SaleController::class, 'reprint'] );
 
     Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
    
@@ -85,5 +89,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/reports/products',[ReportController::class, 'productSales']);
     Route::get('/reports/z-report',[ReportController::class, 'zReport']);
+
+    Route::post( '/switch-branch', [BranchController::class, 'switch'] );
+    Route::get('/branches',[BranchController::class, 'index']);
+    Route::post( '/branches', [BranchController::class, 'store']);
 
 });

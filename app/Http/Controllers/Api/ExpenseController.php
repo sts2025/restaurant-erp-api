@@ -12,14 +12,19 @@ class ExpenseController extends Controller
     /**
      * LIST
      */
-    public function index()
-    {
-        return response()->json(
+public function index()
+{
+    return response()->json(
 
-            Expense::latest()->get()
+        Expense::where(
+            'branch_id',
+            Auth::user()->branch_id
+        )
+        ->latest()
+        ->get()
 
-        );
-    }
+    );
+}
 
     /**
      * STORE
@@ -69,9 +74,7 @@ class ExpenseController extends Controller
     /**
      * DELETE
      */
-    public function destroy(
-        Expense $expense
-    )
+    public function destroy(Expense $expense)
     {
         $expense->delete();
 

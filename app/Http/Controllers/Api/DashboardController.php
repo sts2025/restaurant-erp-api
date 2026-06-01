@@ -7,97 +7,129 @@ use App\Models\Sale;
 use App\Models\Product;
 use App\Models\Shift;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 
 class DashboardController extends Controller
 {
-    public function stats()
-    {
-        /**
-         * TODAY SALES
-         */
-        $todaySales = Sale::sum('total');
+    
+public function stats()
+{
+    $branchId = Auth::user()->branch_id;
 
-        /**
-         * TOTAL ORDERS
-         */
-        $totalOrders = Sale::count();
+    $todaySales = Sale::where(
+        'branch_id',
+        $branchId
+    )->sum('total');
 
-        /**
-         * PAYMENT BREAKDOWN
-         */
-        $cashSales = Sale::where(
-            'payment_method',
-            'Cash'
-        )->sum('total');
+    $totalOrders = Sale::where(
+        'branch_id',
+        $branchId
+    )->count();
 
-        $mobileMoneySales = Sale::where(
-            'payment_method',
-            'Mobile Money'
-        )->sum('total');
+    $cashSales = Sale::where(
+        'branch_id',
+        $branchId
+    )
+    ->where(
+        'payment_method',
+        'Cash'
+    )
+    ->sum('total');
 
-        $cardSales = Sale::where(
-            'payment_method',
-            'Card'
-        )->sum('total');
+    $mobileMoneySales = Sale::where(
+        'branch_id',
+        $branchId
+    )
+    ->where(
+        'payment_method',
+        'Mobile Money'
+    )
+    ->sum('total');
 
-        /**
-         * RECENT SALES
-         */
-        $recentSales = Sale::latest()
-            ->take(10)
-            ->get();
+    $cardSales = Sale::where(
+        'branch_id',
+        $branchId
+    )
+    ->where(
+        'payment_method',
+        'Card'
+    )
+    ->sum('total');
 
-        /**
-         * TOP PRODUCTS
-         */
-        $topProducts = DB::table('sale_items')
+    $recentSales = Sale::where(
+        'branch_id',
+        $branchId
+    )
+    ->latest()
+    ->take(10)
+    ->get();
 
-            ->join(
-                'products',
-                'sale_items.product_id',
-                '=',
-                'products.id'
+    $topProducts = DB::table('sale_items')
+
+        ->join(
+            'sales',
+            'sale_items.sale_id',
+            '=',
+            'sales.id'
+        )
+
+        ->join(
+            'products',
+            'sale_items.product_id',
+            '=',
+            'products.id'
+        )
+
+        ->where(
+            'sales.branch_id',
+            $branchId
+        )
+
+        ->select(
+            'products.name',
+            DB::raw(
+                'SUM(sale_items.quantity) as total_qty'
             )
+        )
 
-            ->select(
-                'products.name',
-                DB::raw('SUM(sale_items.quantity) as total_qty')
-            )
+        ->groupBy('products.name')
 
-            ->groupBy('products.name')
+        ->orderByDesc('total_qty')
 
-            ->orderByDesc('total_qty')
+        ->take(5)
 
-            ->take(5)
+        ->get();
 
-            ->get();
+    $activeShift = Shift::where(
+        'branch_id',
+        $branchId
+    )
+    ->where(
+        'status',
+        'open'
+    )
+    ->latest()
+    ->first();
 
-        /**
-         * ACTIVE SHIFT
-         */
-        $activeShift = Shift::where(
-            'status',
-            'open'
-        )->latest()->first();
+    return response()->json([
 
-        return response()->json([
+        'today_sales' => $todaySales,
 
-            'today_sales' => $todaySales,
+        'total_orders' => $totalOrders,
 
-            'total_orders' => $totalOrders,
+        'cash_sales' => $cashSales,
 
-            'cash_sales' => $cashSales,
+        'mobile_money_sales' => $mobileMoneySales,
 
-            'mobile_money_sales' => $mobileMoneySales,
+        'card_sales' => $cardSales,
 
-            'card_sales' => $cardSales,
+        'recent_sales' => $recentSales,
 
-            'recent_sales' => $recentSales,
+        'top_products' => $topProducts,
 
-            'top_products' => $topProducts,
+        'active_shift' => $activeShift
 
-            'active_shift' => $activeShift
+    ]);
+}
 
-        ]);
-    }
 }

@@ -31,6 +31,7 @@ return new class extends Migration
             $table->string('password');
 
             $table->rememberToken();
+            $table->foreignId('branch_id') ->nullable() ->constrained();
 
             $table->timestamps();
         });

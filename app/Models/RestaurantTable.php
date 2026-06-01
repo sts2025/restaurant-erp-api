@@ -8,7 +8,8 @@ class RestaurantTable extends Model
 {
     protected $fillable = [
 
-        'name',
+         'branch_id',    
+         'name',
 
         'capacity',
 
