@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use App\Models\StockMovement;
 
 class ProductController extends Controller
 {
@@ -75,6 +76,22 @@ class ProductController extends Controller
         ]);
     }
 
+public function stockMovements()
+{
+    return response()->json([
+        'status' => 'success',
+
+        'data' => \App\Models\StockMovement
+            ::with([
+                'product',
+                'user'
+            ])
+            ->latest()
+            ->take(500)
+            ->get()
+    ]);
+}
+
     /**
      * UPDATE PRODUCT
      */
@@ -133,31 +150,101 @@ class ProductController extends Controller
     /**
      * UPDATE STOCK
      */
-    public function updateStock(Request $request)
-    {
-        $request->validate([
-            'product_id' => 'required|exists:products,id',
-            'quantity' => 'required|numeric'
-        ]);
+ public function updateStock(Request $request)
+{
+    $request->validate([
+        'product_id' => 'required|exists:products,id',
+        'quantity' => 'required|numeric|min:0',
+        'type' => 'required|in:in,out,adjust',
+        'reason' => 'nullable|string|max:255'
+    ]);
 
-        $product = Product::findOrFail($request->product_id);
-        
-        // Add branch check for security
-        if ($product->branch_id !== Auth::user()->branch_id) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized access to this product'
-            ], 403);
-        }
-        
-        $product->increment('stock_quantity', $request->quantity);
+    $product = Product::findOrFail(
+        $request->product_id
+    );
 
+    if (
+        $product->branch_id !==
+        Auth::user()->branch_id
+    ) {
         return response()->json([
-            'message' => 'Stock updated successfully',
-            'data' => $product
-        ]);
+            'status' => 'error',
+            'message' => 'Unauthorized access'
+        ], 403);
     }
 
+    switch ($request->type) {
+
+        case 'in':
+
+            $product->increment(
+                'stock_quantity',
+                $request->quantity
+            );
+
+            break;
+
+        case 'out':
+
+            if (
+                $product->stock_quantity <
+                $request->quantity
+            ) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Insufficient stock'
+                ], 422);
+            }
+
+            $product->decrement(
+                'stock_quantity',
+                $request->quantity
+            );
+
+            break;
+
+        case 'adjust':
+
+            $product->update([
+                'stock_quantity' =>
+                $request->quantity
+            ]);
+
+            break;
+    }
+
+    /**
+     * STOCK MOVEMENT LOG
+     */
+    \App\Models\StockMovement::create([
+
+        'tenant_id' => 1,
+
+        'branch_id' =>
+            Auth::user()->branch_id,
+
+        'product_id' =>
+            $product->id,
+
+        'user_id' =>
+            Auth::id(),
+
+        'type' =>
+            $request->type,
+
+        'quantity' =>
+            $request->quantity,
+
+        'reason' =>
+            $request->reason,
+    ]);
+
+    return response()->json([
+        'status' => 'success',
+        'message' => 'Stock updated successfully',
+        'data' => $product->fresh()
+    ]);
+}
     /**
      * BULK UPDATE PREPARATION AREAS
      */

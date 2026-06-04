@@ -36,12 +36,13 @@ public function active()
      */
     public function open(Request $request)
 {
+    //dd(Auth::user());
     $request->validate([
         'starting_cash' => 'required|numeric|min:0'
     ]);
 
     $shift = Shift::create([
-        'tenant_id' => 1,
+       'tenant_id' => 1,
         'branch_id' => Auth::user()->branch_id,
         'user_id' => Auth::id(),
         'business_date' => now()->toDateString(),
@@ -77,13 +78,39 @@ public function active()
         /**
          * TOTAL SALES FOR SHIFT
          */
-        $salesTotal = Sale::where('shift_id', $shift->id)
-            ->sum('total');
+        $cashSales = Sale::where(
+        'shift_id',
+        $shift->id
+    )
+    ->where(
+        'payment_method',
+        'Cash'
+    )
+    ->sum('total');
 
-        /**
-         * EXPECTED CASH
-         */
-        $expectedCash = $shift->starting_cash + $salesTotal;
+$mobileMoneySales = Sale::where(
+        'shift_id',
+        $shift->id
+    )
+    ->where(
+        'payment_method',
+        'Mobile Money'
+    )
+    ->sum('total');
+
+$cardSales = Sale::where(
+        'shift_id',
+        $shift->id
+    )
+    ->where(
+        'payment_method',
+        'Card'
+    )
+    ->sum('total');
+
+$expectedCash =
+    $shift->starting_cash +
+    $cashSales;
 
         /**
          * DIFFERENCE
@@ -102,12 +129,25 @@ public function active()
         ]);
 
         return response()->json([
-            'message' => 'Shift closed successfully',
-            'shift' => $shift,
-            'sales_total' => $salesTotal,
-            'expected_cash' => $expectedCash,
-            'difference' => $difference
-        ]);
+    'message' => 'Shift closed successfully',
+
+    'shift' => $shift,
+
+    'cash_sales' =>
+        $cashSales,
+
+    'mobile_money_sales' =>
+        $mobileMoneySales,
+
+    'card_sales' =>
+        $cardSales,
+
+    'expected_cash' =>
+        $expectedCash,
+
+    'difference' =>
+        $difference
+]);
     }
 
     /**

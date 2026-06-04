@@ -19,13 +19,14 @@ class SaleController extends Controller
         /**
          * VALIDATION
          */
-        $request->validate([
-            'items' => 'required|array|min:1',
-            'items.*.product_id' => 'required|exists:products,id',
-            'items.*.quantity' => 'required|numeric|min:1',
-            'paid_amount' => 'required|numeric|min:0',
-            'payment_method' => 'required|string'
-        ]);
+       $request->validate([
+    'items' => 'required|array|min:1',
+    'items.*.product_id' => 'required|exists:products,id',
+    'items.*.quantity' => 'required|numeric|min:1',
+    'paid_amount' => 'required|numeric|min:0',
+    'payment_method' => 'required|string',
+    'notes' => 'nullable|string|max:500'
+]);
 
         /**
          * ACTIVE SHIFT
@@ -97,7 +98,7 @@ class SaleController extends Controller
             /**
              * RECEIPT NUMBER
              */
-            $tenant = Tenant::find(1);
+          $tenant = Tenant::find(1);
             $businessName = $tenant->name ?? 'Restaurant POS';
             $words = explode(' ', $businessName);
             $initials = '';
@@ -111,16 +112,7 @@ class SaleController extends Controller
              */
             $lastSale = Sale::latest()->first();
             $nextNumber = 100;
-
-            if ($lastSale && $lastSale->receipt_number) {
-                preg_match('/(\d+)$/', $lastSale->receipt_number, $matches);
-                if (isset($matches[1])) {
-                    $nextNumber = ((int) $matches[1]) + 1;
-                }
-            }
-
-            $receiptNumber = $initials . $nextNumber;
-
+            $receiptNumber = $initials . now()->format('YmdHis') . rand(100, 999);
             /**
              * EXISTING ACTIVE SALE
              */
@@ -132,7 +124,7 @@ class SaleController extends Controller
                 $sale->items()->delete();
             } else {
                 $sale = new Sale();
-                $sale->tenant_id = 1;
+               $sale->tenant_id =1;
                 $sale->branch_id = Auth::user()->branch_id;
                 $sale->user_id = Auth::id();
                 $sale->receipt_number = $receiptNumber;
@@ -143,7 +135,7 @@ class SaleController extends Controller
             $sale->paid = $request->paid_amount;
             $sale->change = $request->paid_amount - $totalAmount;
             $sale->payment_method = $request->payment_method;
-            
+            $sale->notes = $request->notes;
             /**
              * SET STATUS TO COMPLETED
              */
@@ -230,7 +222,6 @@ class SaleController extends Controller
          * CREATE SALE
          */
         $sale = new Sale();
-        $sale->tenant_id = 1;
         $sale->branch_id = Auth::user()->branch_id;
         $sale->user_id = Auth::id();
         $sale->shift_id = $activeShift->id;
@@ -347,22 +338,72 @@ class SaleController extends Controller
     }
 
     /**
-     * VOID SALE
+     * VOID SALE - FIXED: Restores stock quantities
      */
     public function voidSale(Request $request, Sale $sale)
     {
         $request->validate([
-            'reason' => 'required'
+            'reason' => 'required|string'
         ]);
 
-        $sale->update([
-            'is_void' => true,
-            'void_reason' => $request->reason,
-            'voided_by' => auth()->id()
-        ]);
+        // Check if already voided
+        if ($sale->status === 'void' || $sale->is_void) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Sale already voided'
+            ], 422);
+        }
+
+        // Use transaction to ensure data consistency
+        DB::transaction(function () use ($sale, $request) {
+            // Load items with their products
+            $sale->load('items.product');
+
+            // Restore stock for each item
+            foreach ($sale->items as $item) {
+                if ($item->product) {
+                    $item->product->increment('stock_quantity', $item->quantity);
+
+                    
+                    
+   \App\Models\StockMovement::create([
+
+    'tenant_id' => 1,
+
+    'branch_id' =>
+        Auth::user()->branch_id,
+
+    'product_id' =>
+        $item->product->id,
+
+    'user_id' =>
+        Auth::id(),
+
+    'type' => 'in',
+
+    'quantity' =>
+        $item->quantity,
+
+    'reason' =>
+        'Voided Sale #' .
+        $sale->receipt_number
+
+]);
+                }
+            }
+
+            // Update sale record
+            $sale->update([
+                'status' => 'void',
+                'is_void' => true,
+                'void_reason' => $request->reason,
+                'voided_by' => auth()->id()
+            ]);
+        });
 
         return response()->json([
-            'message' => 'Sale voided'
+            'status' => 'success',
+            'message' => 'Sale voided successfully. Stock has been restored.'
         ]);
     }
 
@@ -381,19 +422,21 @@ class SaleController extends Controller
         return response()->json($sale);
     }
 
+    /**
+     * REPRINT RECEIPT - FIXED: Returns sale directly
+     */
     public function reprint($id)
-{
-    $sale = Sale::with([
-        'items.product',
-        'user',
-        'table'
-    ])->findOrFail($id);
+    {
+        $sale = Sale::with([
+            'items.product',
+            'user',
+            'table'
+        ])->findOrFail($id);
 
-    return response()->json([
-        'status' => 'success',
-        'data' => $sale
-    ]);
-}
+        // Return sale directly (not wrapped in data property)
+        return response()->json($sale);
+    }
+
     /**
      * DAILY SALES REPORT
      * Advanced version with date range filtering and category analytics
@@ -407,12 +450,13 @@ class SaleController extends Controller
         $toDate = $request->to_date ?? today()->toDateString();
 
         /**
-         * FETCH SALES
+         * FETCH SALES - Exclude voided sales
          */
         $sales = Sale::with([
             'items.product.category'
         ])
         ->where('branch_id', Auth::user()->branch_id)
+        ->where('status', 'completed')
         ->whereDate('created_at', '>=', $fromDate)
         ->whereDate('created_at', '<=', $toDate);
 
@@ -463,48 +507,6 @@ class SaleController extends Controller
         /**
          * LOOP SALES
          */
-        foreach ($sales as $sale) {
-            foreach ($sale->items as $item) {
-                $product = $item->product;
-
-                if (!$product) {
-                    continue;
-                }
-
-                $categoryName = $product->category->name ?? 'Uncategorized';
-
-                /**
-                 * CATEGORY SALES
-                 */
-                if (!isset($categoryTotals[$categoryName])) {
-                    $categoryTotals[$categoryName] = 0;
-                }
-                $categoryTotals[$categoryName] += $item->total;
-
-                /**
-                 * CATEGORY QUANTITIES
-                 */
-                if (!isset($categoryQuantities[$categoryName])) {
-                    $categoryQuantities[$categoryName] = 0;
-                }
-                $categoryQuantities[$categoryName] += $item->quantity;
-
-                /**
-                 * PRODUCT SALES
-                 */
-                if (!isset($productSales[$product->name])) {
-                    $productSales[$product->name] = [
-                        'name' => $product->name,
-                        'quantity' => 0,
-                        'amount' => 0
-                    ];
-                }
-
-                $productSales[$product->name]['quantity'] += $item->quantity;
-                $productSales[$product->name]['amount'] += $item->total;
-            }
-        }
-
         /**
          * SORT DATA
          */
@@ -535,12 +537,18 @@ class SaleController extends Controller
                 'category_totals' => $categoryTotals,
                 'category_quantities' => $categoryQuantities,
                 'top_products' => array_slice(
-    array_values($productSales),
-    0,
-    10
-),
+                    array_values($productSales),
+                    0,
+                    10
+                ),
                 'recent_sales' => $recentSales
             ]
         ]);
     }
+
+
 }
+
+
+
+

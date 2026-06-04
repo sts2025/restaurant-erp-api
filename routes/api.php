@@ -16,6 +16,8 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\PurchaseController;
 use App\Http\Controllers\Api\BranchController;
+use App\Http\Controllers\Api\ReportController;
+
 
 // =====================
 // PUBLIC ROUTES
@@ -58,6 +60,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/reports/daily',[SaleController::class, 'dailyReport']);
     Route::get('/sales/{sale}', [SaleController::class, 'show']);
     Route::get( '/sales/{id}/reprint', [SaleController::class, 'reprint'] );
+    Route::post('/sales/{sale}/void', [SaleController::class, 'voidSale']);
 
     Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
    
@@ -94,4 +97,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/branches',[BranchController::class, 'index']);
     Route::post( '/branches', [BranchController::class, 'store']);
 
+    Route::get('/stock-movements',[ProductController::class,'stockMovements']);
+    Route::post('/tables/merge', [RestaurantTableController::class, 'merge']);
+    Route::post('/tables/split', [RestaurantTableController::class, 'split']);
 });

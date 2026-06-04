@@ -16,7 +16,7 @@ class BranchController extends Controller
         ]);
     }
 
-    public function switch(Request $request)
+   public function switch(Request $request)
 {
     $request->validate([
         'branch_id' => 'required|exists:branches,id'
@@ -24,16 +24,25 @@ class BranchController extends Controller
 
     $user = auth()->user();
 
+    $branch = Branch::find($request->branch_id);
+
+    if (!$branch) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Branch not found'
+        ], 404);
+    }
+
     $user->update([
-        'branch_id' => $request->branch_id
+        'branch_id' => $branch->id
     ]);
 
     return response()->json([
         'status' => 'success',
-        'message' => 'Branch switched'
+        'message' => 'Branch switched successfully',
+        'branch' => $branch
     ]);
 }
-
     public function store(Request $request)
     {
         $request->validate([
@@ -42,8 +51,7 @@ class BranchController extends Controller
 
         $branch = Branch::create([
 
-            'tenant_id' => 1,
-
+           'tenant_id' => 1,
             'name' => $request->name,
 
             'location' =>
@@ -61,4 +69,5 @@ class BranchController extends Controller
             'data' => $branch
         ]);
     }
+    
 }

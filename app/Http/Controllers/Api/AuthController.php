@@ -100,8 +100,7 @@ class AuthController extends Controller
 
                     'role' => $user->role,
 
-                    'tenant_id' =>
-                        $user->tenant_id,
+                    'tenant_id' =>1,
 
                     'branch_id' =>
                         $user->branch_id,
@@ -156,7 +155,7 @@ public function me(Request $request)
 
             'role' => $user->role,
 
-            'tenant_id' => $user->tenant_id,
+           'tenant_id' => 1,
 
             'branch_id' => $user->branch_id,
 
