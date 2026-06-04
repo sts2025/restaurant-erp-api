@@ -12,6 +12,7 @@ return [
     'allowed_origins' => [
         'http://localhost:5173',
         'https://resto.agileaccounts.me',
+        'https://www.resto.agileaccounts.me',
     ],
 
     'allowed_origins_patterns' => [],
@@ -22,6 +23,6 @@ return [
 
     'max_age' => 0,
 
-    'supports_credentials' => false,
+    'supports_credentials' => true,
 
 ];
