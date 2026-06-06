@@ -58,11 +58,14 @@ class SaleController extends Controller
                 /**
                  * STOCK CHECK
                  */
-                if ($product->stock_quantity < $item['quantity']) {
-                    return response()->json([
-                        'message' => 'Insufficient stock for ' . $product->name
-                    ], 400);
-                }
+               if (
+    $product->track_inventory &&
+    $product->stock_quantity < $item['quantity']
+) {
+    return response()->json([
+        'message' => 'Insufficient stock for '.$product->name
+    ], 400);
+}
 
                 /**
                  * LINE TOTAL
@@ -83,7 +86,7 @@ class SaleController extends Controller
                 /**
                  * REDUCE STOCK
                  */
-                $product->decrement('stock_quantity', $item['quantity']);
+               if ($product->track_inventory) { $product->decrement( 'stock_quantity', $item['quantity']); }
             }
 
             /**
@@ -169,7 +172,12 @@ class SaleController extends Controller
                 'status' => 'success',
                 'message' => 'Sale completed successfully',
                 'clear_table' => true,
-                'receipt' => $sale->load('items.product')
+                'receipt' => $sale->load([
+                    'items.product',
+                    'user',
+                    'branch',
+                    'table'
+                ]),
             ]);
         });
     }
@@ -261,10 +269,12 @@ class SaleController extends Controller
      */
     public function heldOrders()
     {
-        $sales = Sale::with([
-            'items.product',
-            'table'
-        ])
+       $Sale::with([
+   'items.product',
+   'user',
+   'table',
+   'branch'
+])
         ->where('branch_id', Auth::user()->branch_id)
         ->where('status', 'held')
         ->latest()
@@ -282,10 +292,11 @@ class SaleController extends Controller
      */
     public function index(Request $request)
     {
-        $sales = Sale::with([
-            'items.product',
-            'user',
-            'table'
+        $Sale::with([
+         'items.product',
+          'user',
+         'table',
+         'branch'
         ])
         ->where('branch_id', Auth::user()->branch_id)
         ->latest()
@@ -318,6 +329,7 @@ class SaleController extends Controller
          * FIND ORDER
          */
         $sale = Sale::with([
+    
             'items.product',
             'table'
         ])
@@ -412,10 +424,12 @@ class SaleController extends Controller
      */
     public function show($id)
     {
-        $sale = Sale::with([
-            'items.product',
-            'user'
-        ])
+        $Sale::with([
+   'items.product',
+   'user',
+   'table',
+   'branch'
+])
         ->where('branch_id', Auth::user()->branch_id)
         ->findOrFail($id);
 
@@ -430,7 +444,7 @@ class SaleController extends Controller
         $sale = Sale::with([
             'items.product',
             'user',
-            'table'
+            'table', 'branch'
         ])->findOrFail($id);
 
         // Return sale directly (not wrapped in data property)
