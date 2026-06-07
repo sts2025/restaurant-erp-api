@@ -18,9 +18,11 @@ class Product extends Model
     'category_id',
     'branch_id',
     'name',
+    'cost_price',
     'price',
     'stock_quantity',
-    'preparation_area'
+    'preparation_area',
+    'is_unlimited'
 
 ];
 
@@ -29,7 +31,8 @@ class Product extends Model
      */
     protected $attributes = [
 
-    'preparation_area' => 'direct'
+    'preparation_area' => 'direct',
+    'is_unlimited' => false
 
 ];
     /**
