@@ -36,7 +36,7 @@ class ProductController extends Controller
         $request->validate([
             'name'             => 'required|string|max:255',
             'price'            => 'required|numeric|min:0',
-            'cost_price'       => 'nullable|numeric|min:0',
+            'cost'       => 'nullable|numeric|min:0',
             'stock_quantity'   => 'nullable|numeric|min:0',
             'is_unlimited'     => 'nullable|boolean',
             'category_id'      => 'nullable|exists:categories,id',
@@ -50,7 +50,7 @@ class ProductController extends Controller
             'tenant_id'        => 1,
             'name'             => $request->name,
             'price'            => $request->price,
-            'cost_price'       => $request->cost_price ?? 0,
+            'cost'       => $request->cost ?? 0,
             // Unlimited products don't need a stock quantity
             'stock_quantity'   => $isUnlimited ? 0 : ($request->stock_quantity ?? 0),
             'is_unlimited'     => $isUnlimited,
@@ -97,7 +97,7 @@ class ProductController extends Controller
         $request->validate([
             'name'             => 'sometimes|required|string|max:255',
             'price'            => 'sometimes|required|numeric|min:0',
-            'cost_price'       => 'nullable|numeric|min:0',
+            'cost'       => 'nullable|numeric|min:0',
             'stock_quantity'   => 'nullable|numeric|min:0',
             'is_unlimited'     => 'nullable|boolean',
             'category_id'      => 'nullable|exists:categories,id',
@@ -111,7 +111,7 @@ class ProductController extends Controller
         $product->update([
             'name'             => $request->name             ?? $product->name,
             'price'            => $request->price            ?? $product->price,
-            'cost_price'       => $request->cost_price       ?? $product->cost_price,
+            'cost'       => $request->cost       ?? $product->cost,
             'stock_quantity'   => $isUnlimited ? 0 : ($request->stock_quantity ?? $product->stock_quantity),
             'is_unlimited'     => $isUnlimited,
             'category_id'      => $request->category_id      ?? $product->category_id,
